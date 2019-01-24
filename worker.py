@@ -8,7 +8,7 @@ class Handler(socketserver.StreamRequestHandler):
             data = self.request.recv(1024)
             if len(data) == 0:
                 break
-            self.request.send(data)
+            print(data)  # debug
         self.request.close()
 
 
