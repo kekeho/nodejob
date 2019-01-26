@@ -1,6 +1,8 @@
 import socket
 import pickle
 import types
+import time
+import multiprocessing as mp
 
 
 class NodeJobResult:
@@ -126,8 +128,12 @@ class Worker():
                 self.data_block = pickle.loads(data)
 
     def __run(self):
-        self.results = [self.function(data)
-                        for data in self.data_block]
+        print(f'Running {self.function}')
+        start_time = time.time()
+        pool = mp.Pool(mp.cpu_count())
+        self.results = pool.map(self.function, self.data_block)
+        pool.close()
+        print(f'Done at {time.time() - start_time}s')
 
     def __send(self):
         self.socket.send(pickle.dumps(self.results))
