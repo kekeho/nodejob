@@ -9,21 +9,21 @@ class NodeJobResult:
         self._list = non_ordered_list
         self._x = 0
         self._y = 0
-        self._x_max = len(non_ordered_list)
+        self._y_max = len(non_ordered_list)
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        if self._x == self._x_max:
-            self._x = 0
-            self._y += 1
+        if self._y == self._y_max:
+            self._y = 0
+            self._x += 1
         try:
-            return_val = self._list[self._x][self._y]
+            return_val = self._list[self._y][self._x]
         except IndexError:
             raise StopIteration()
 
-        self._x += 1
+        self._y += 1
         return return_val
 
 
