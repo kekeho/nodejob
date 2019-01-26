@@ -1,8 +1,6 @@
 import socket
-import socketserver
 import pickle
 import types
-import time
 
 
 class NodeJobResult:
@@ -56,52 +54,88 @@ class Master:
         # Send function-object to worker
         # map(lambda x: x.sendall(pickled_function), self.clients)
         [client.send(pickled_function) for client in self.clients]
-        time.sleep(0.001)
+        [client.close() for client in self.clients]
+
         # Send data blocks to worker
+        self.clients = [socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        for x in self.address_list]
+        [client.connect(worker)
+         for client, worker in zip(self.clients, self.address_list)]
         [client.send(pickle.dumps(data_block))
          for client, data_block in zip(self.clients, data_blocks)]
 
-        returns = [pickle.loads(client.recv(2**30)) for client in self.clients]
+        [client.close() for client in self.clients]
+
+        self.clients = [socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        for x in self.address_list]
+        [client.connect(worker)
+         for client, worker in zip(self.clients, self.address_list)]
+
+        returns = []
+        for client in self.clients:
+            data = b''
+            while True:
+                buffer = client.recv(4096)
+                if len(buffer) == 0:
+                    break
+                data += buffer
+
+            returns.append(pickle.loads(data))
+
         return NodeJobResult(returns)
 
 
 class Worker():
     """nodejob worker object"""
-    class Handler(socketserver.StreamRequestHandler):
-        """TCP server handler"""
-        def handle(self):
-            count = 0
-            while True:
-                data = self.request.recv(2**30)
-                if len(data) == 0:
-                    break
-
-                if count == 0:
-                    function = pickle.loads(data)
-                    count += 1
-                elif count == 1:
-                    print(data)
-                    data_block = pickle.loads(data)
-                    returns = self._work(function, data_block)
-                    self.request.send(pickle.dumps(returns))
-                else:
-                    break
-
-            self.request.close()
-
-        def _work(self, function: types.FunctionType, data_bloc: list):
-            """execute function"""
-            returns = []
-            for data in data_bloc:
-                returns.append(function(data))
-
-            return returns
 
     def __init__(self, host: str, port: int):
         self.HOST = host
         self.PORT = port
+
+        self.server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server.bind((self.HOST, self.PORT))
+
+        self.master = None  # master address
+
+        self.function = None
+        self.data_block = None
+        self.results = None
+
+    def wait_forever(self):
         while True:
-            server = socketserver.TCPServer((self.HOST, self.PORT),
-                                            self.Handler)
-            print('work on', server.socket.getsockname())
-            server.serve_forever()
+            self.server.listen()
+            self.socket, self.master = self.server.accept()
+
+            if self.function and self.data_block:
+                self.__run()
+                self.__send()
+                self.__clean()
+                continue
+
+            data = b''
+            while True:
+                buffer = self.socket.recv(10)
+                if len(buffer) == 0:
+                    break
+
+                data += buffer
+
+            print(data)
+
+            if self.function is None:
+                self.function = pickle.loads(data)
+            else:
+                self.data_block = pickle.loads(data)
+
+    def __run(self):
+        self.results = [self.function(data)
+                        for data in self.data_block]
+
+    def __send(self):
+        self.socket.send(pickle.dumps(self.results))
+
+    def __clean(self):
+        self.function = None
+        self.data_block = None
+        self.results = None
+        self.socket.close()
