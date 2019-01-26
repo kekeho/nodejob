@@ -75,7 +75,7 @@ class Master:
         for client in self.clients:
             data = b''
             while True:
-                buffer = client.recv(4096)
+                buffer = client.recv(2**30)
                 if len(buffer) == 0:
                     break
                 data += buffer
@@ -114,13 +114,11 @@ class Worker():
 
             data = b''
             while True:
-                buffer = self.socket.recv(10)
+                buffer = self.socket.recv(2**30)
                 if len(buffer) == 0:
                     break
 
                 data += buffer
-
-            print(data)
 
             if self.function is None:
                 self.function = pickle.loads(data)
