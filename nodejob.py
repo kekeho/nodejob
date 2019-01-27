@@ -3,7 +3,6 @@ import pickle
 import types
 import time
 import multiprocessing as mp
-from joblib import Parallel, delayed
 
 
 class NodeJobResult:
@@ -48,37 +47,44 @@ class Master:
         data_blocks = [list(iterator)[i::clients_count]
                        for i in range(clients_count)]
 
-        self.pickled_function = pickle.dumps(function)
+        pickled_function = pickle.dumps(function)
+
+        # Connect to worker
+        [client.connect(worker)
+         for client, worker in zip(self.clients, self.address_list)]
+
+        # Send function-object to worker
+        # map(lambda x: x.sendall(pickled_function), self.clients)
+        [client.send(pickled_function) for client in self.clients]
+        [client.close() for client in self.clients]
+
+        # Send data blocks to worker
+        self.clients = [socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        for x in self.address_list]
+        [client.connect(worker)
+         for client, worker in zip(self.clients, self.address_list)]
+        [client.send(pickle.dumps(data_block))
+         for client, data_block in zip(self.clients, data_blocks)]
+
+        [client.close() for client in self.clients]
+
+        self.clients = [socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        for x in self.address_list]
+        [client.connect(worker)
+         for client, worker in zip(self.clients, self.address_list)]
 
         returns = []
-        ret = Parallel(n_jobs=clients_count)(
-                       [delayed(self.__send_to_worker)(w, d)
-                        for w, d in zip(self.address_list, data_blocks)])
+        for client in self.clients:
+            data = b''
+            while True:
+                buffer = client.recv(2**30)
+                if len(buffer) == 0:
+                    break
+                data += buffer
 
-        returns += ret
+            returns.append(pickle.loads(data))
+
         return NodeJobResult(returns)
-
-    def __send_to_worker(self, worker, data_block):
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(worker)
-        client.send(self.pickled_function)
-        client.close()
-
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(worker)
-        client.send(pickle.dumps(data_block))
-        client.close()
-
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client.connect(worker)
-        data = b''
-        while True:
-            buffer = client.recv(2**30)
-            if len(buffer) == 0:
-                break
-            data += buffer
-
-        return pickle.loads(data)
 
 
 class Worker():
